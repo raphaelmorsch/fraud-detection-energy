@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraud-detection-energy"
+version = "0.1.0"
+description = "Fraud detection project for energy data"
+authors = [
+    { name="Seu Nome", email="seu@email.com" }
+]
+dependencies = [
+    "pandas",
+    "scikit-learn",
+    "kfp>=2.0.0",
+    "mlflow",
+    # etc
+]
+
+[tool.setuptools.packages.find]
+include = ["pipelines"]

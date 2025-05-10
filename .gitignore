@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+fraud_detection.egg-info
+*.egg
+*.egg-info
+.DS_Store
+*.log

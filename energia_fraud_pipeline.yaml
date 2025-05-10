@@ -1,0 +1,252 @@
+# PIPELINE DEFINITION
+# Name: energia-fraud-detection
+# Description: Pipeline completo para detecção de fraudes em energia
+# Inputs:
+#    input_path: str [Default: '/data/raw/dados_medidores_energia.csv']
+#    model_path: str [Default: '/model/isolation_forest.joblib']
+#    processed_path: str [Default: '/data/processed/']
+components:
+  comp-ingest-data:
+    executorLabel: exec-ingest-data
+    inputDefinitions:
+      parameters:
+        input_path:
+          parameterType: STRING
+        output_path:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_file:
+          parameterType: STRING
+  comp-preprocess-data:
+    executorLabel: exec-preprocess-data
+    inputDefinitions:
+      parameters:
+        input_path:
+          parameterType: STRING
+        output_path:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_file:
+          parameterType: STRING
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      parameters:
+        input_path:
+          parameterType: STRING
+        model_path:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-ingest-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - ingest_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'pyarrow'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef ingest_data(input_path: str, \n                output_path: str)\
+          \ -> NamedTuple(\"Outputs\", [(\"output_file\", str)]):\n    \"\"\"\n  \
+          \  Fun\xE7\xE3o real para ingest\xE3o de dados:\n    - L\xEA o CSV de entrada\n\
+          \    - Faz valida\xE7\xE3o b\xE1sica\n    - Salva em formato parquet (mais\
+          \ eficiente)\n    \"\"\"\n    print(f\"[INGEST] Lendo dados de {input_path}\"\
+          )\n\n    # Verifica se o arquivo existe\n    if not os.path.exists(input_path):\n\
+          \        raise FileNotFoundError(f\"Arquivo de entrada n\xE3o encontrado:\
+          \ {input_path}\")\n\n    df = pd.read_csv(input_path)\n\n    # Valida\xE7\
+          \xF5es b\xE1sicas\n    required_columns = ['id_medidor', 'consumo_kwh',\
+          \ 'tensao_media', 'fraude']\n    for col in required_columns:\n        if\
+          \ col not in df.columns:\n            raise ValueError(f\"Coluna obrigat\xF3\
+          ria faltando: {col}\")\n\n    # Convers\xE3o para formato mais eficiente\n\
+          \    output_file = os.path.join(output_path, \"dados_medidores.parquet\"\
+          )\n    df.to_parquet(output_file, index=False)\n    print(f\"[INGEST] Dados\
+          \ salvos em {output_file}\")\n\n    return (output_file,)  # Retorna o caminho\
+          \ do arquivo processado\n\n"
+        image: python:3.9-slim
+    exec-preprocess-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'pyarrow' 'numpy' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess_data(input_path: str, output_path: str) -> NamedTuple(\"\
+          Outputs\", [(\"output_file\", str)]):\n    \"\"\"\n    Fun\xE7\xE3o real\
+          \ para pr\xE9-processamento:\n    - Carrega os dados\n    - Trata valores\
+          \ nulos\n    - Normaliza features num\xE9ricas\n    - Engenharia de features\
+          \ (cria novas vari\xE1veis)\n    \"\"\"\n    print(f\"[PREPROCESS] Carregando\
+          \ dados de {input_path}\")\n\n    df = pd.read_parquet(input_path)\n\n \
+          \   # 1. Tratamento de nulos\n    df.fillna({\n        'consumo_kwh': df['consumo_kwh'].median(),\n\
+          \        'tensao_media': df['tensao_media'].mean(),\n        'varia\xE7\xE3\
+          o_consumo': 0\n    }, inplace=True)\n\n    # 2. Normaliza\xE7\xE3o\n   \
+          \ scaler = StandardScaler()\n    numeric_cols = ['consumo_kwh', 'tensao_media',\
+          \ 'varia\xE7\xE3o_consumo']\n    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])\n\
+          \n    # 3. Engenharia de features\n    df['consumo_tensao_ratio'] = df['consumo_kwh']\
+          \ / (df['tensao_media'] + 1e-6)\n    df['consumo_diff'] = df['consumo_kwh']\
+          \ - df['consumo_medio_historico']\n\n    # 4. Filtro de seguran\xE7a\n \
+          \   df = df.replace([np.inf, -np.inf], np.nan).dropna()\n\n    # Salva os\
+          \ dados processados\n    output_file = os.path.join(output_path, \"dados_processados.parquet\"\
+          )\n    df.to_parquet(output_file, index=False)\n\n    print(f\"[PREPROCESS]\
+          \ Dados processados salvos em {output_file}\")\n    return (output_file,)\n\
+          \n"
+        image: python:3.9-slim
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'scikit-learn'\
+          \ 'joblib' 'mlflow' 'pandas' 'pyarrow' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(input_path: str, model_path: str):\n    \"\"\"\n\
+          \    Fun\xE7\xE3o real para treinamento:\n    - Carrega dados processados\n\
+          \    - Separa em treino/teste\n    - Treina Isolation Forest\n    - Registra\
+          \ m\xE9tricas no MLflow\n    - Salva o modelo treinado\n    \"\"\"\n   \
+          \ print(f\"[TRAIN] Carregando dados de {input_path}\")\n\n    df = pd.read_parquet(input_path)\n\
+          \n    # Separa features e target\n    X = df[['consumo_kwh', 'varia\xE7\xE3\
+          o_consumo', 'tensao_media', 'consumo_tensao_ratio']]\n    y = df['fraude']\n\
+          \n    # Separa em treino e teste\n    X_train, X_test, y_train, y_test =\
+          \ train_test_split(\n        X, y, test_size= 0.2, random_state=42\n   \
+          \ )\n\n    # Configura\xE7\xE3o do modelo\n    model = IsolationForest(\n\
+          \        n_estimators=150,\n        max_samples='auto',\n        contamination=0.05,\n\
+          \        random_state=42,\n        verbose=1\n    )\n\n    print(\"[TRAIN]\
+          \ Iniciando treinamento...\")\n    model.fit(X_train)\n\n    # Avalia\xE7\
+          \xE3o\n    train_score = model.score_samples(X_train).mean()\n    test_score\
+          \ = model.score_samples(X_test).mean()\n\n    print(f\"[TRAIN] Train score:\
+          \ {train_score:.4f}\")\n    print(f\"[TRAIN] Test score: {test_score:.4f}\"\
+          )\n\n    # Registro no MLflow\n    with mlflow.start_run():\n        mlflow.log_param(\"\
+          n_estimators\", 150)\n        mlflow.log_metric(\"train_score\", train_score)\n\
+          \        mlflow.log_metric(\"test_score\", test_score)\n        mlflow.sklearn.log_model(model,\
+          \ \"model\")\n\n        # Salva o modelo tamb\xE9m localmente\n        os.makedirs(os.path.dirname(model_path),\
+          \ exist_ok=True)\n        joblib.dump(model, model_path)\n\n    print(f\"\
+          [TRAIN] Modelo salvo em {model_path}\")\n    return model_path\n\n"
+        image: python:3.9-slim
+pipelineInfo:
+  description: "Pipeline completo para detec\xE7\xE3o de fraudes em energia"
+  name: energia-fraud-detection
+root:
+  dag:
+    tasks:
+      ingest-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-ingest-data
+        inputs:
+          parameters:
+            input_path:
+              componentInputParameter: input_path
+            output_path:
+              componentInputParameter: processed_path
+        taskInfo:
+          name: ingest-data
+      preprocess-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess-data
+        dependentTasks:
+        - ingest-data
+        inputs:
+          parameters:
+            input_path:
+              taskOutputParameter:
+                outputParameterKey: output_file
+                producerTask: ingest-data
+            output_path:
+              componentInputParameter: processed_path
+        taskInfo:
+          name: preprocess-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - preprocess-data
+        inputs:
+          parameters:
+            input_path:
+              taskOutputParameter:
+                outputParameterKey: output_file
+                producerTask: preprocess-data
+            model_path:
+              componentInputParameter: model_path
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      input_path:
+        defaultValue: /data/raw/dados_medidores_energia.csv
+        isOptional: true
+        parameterType: STRING
+      model_path:
+        defaultValue: /model/isolation_forest.joblib
+        isOptional: true
+        parameterType: STRING
+      processed_path:
+        defaultValue: /data/processed/
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0
